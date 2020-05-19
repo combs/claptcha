@@ -74,15 +74,20 @@ class Claptcha(object):
               It is advised to not use this option if you want to focus on
               efficiency, since generating noise can significantly extend
               image creation time. Default: 0.
+            * *lines* (``int``) --
+              Draw lines? If so, how many? Default: 1
+
         """
         self.source = source
         self.size = size
         self.margin = margin
         self.font = font
 
+        self.glitter = kwargs.get('glitter',50)
         self.format = kwargs.get('format', 'PNG')
         self.resample = kwargs.get('resample', Image.BILINEAR)
         self.noise = abs(kwargs.get('noise', 0.))
+        self.lines = int(kwargs.get('lines',1))
 
     @property
     def image(self):
@@ -103,21 +108,27 @@ class Claptcha(object):
         w, h = self.font.getsize(text)
         margin_x = round(self.margin_x * w / self.w)
         margin_y = round(self.margin_y * h / self.h)
-
+        background = (random.randint(230, 255), random.randint(230, 255),random.randint(230, 255)) 
+            
         image = Image.new('RGB',
                           (w + 2*margin_x, h + 2*margin_y),
-                          (255, 255, 255))
+                          background)
 
         # Text
         self._writeText(image, text, pos=(margin_x, margin_y))
 
         # Line
-        self._drawLine(image)
+        for i in range(self.lines):
+            self._drawLine(image)
 
         # White noise
         noise = self._whiteNoise(image.size)
         if noise is not None:
             image = Image.blend(image, noise, 0.5)
+
+        # Glitter
+        if self.glitter:
+            image = self._drawGlitter(image, number = self.glitter)
 
         # Resize
         image = image.resize(self.size, resample=self.resample)
@@ -264,17 +275,35 @@ class Claptcha(object):
             raise ClaptchaError("only acceptable noise amplitude from range [0:1]")
         self.__noise = noise
 
-    def _writeText(self, image, text, pos):
+    @property
+    def lines(self):
+        """Lines parameter, integer. """
+        return self.__lines
+    
+    @lines.setter
+    def lines(self, lines):
+        if type(lines) != int:
+            raise ClaptchaError("lines must be int")
+        if lines < 0:
+            raise ClaptchaError("lines must be 0+")
+        self.__lines=lines
+
+    def _writeText(self, image, text, pos, color=None):
         """Write morphed text in Image object."""
         offset = 0
         x, y = pos
 
+        if color==None:
+            color=(random.randint(20, 200), random.randint(20, 200),random.randint(20, 100), 255)
+            # ensure that all rgb values are at least a little dark, and especially one channel, blue.
+            
         for c in text:
             # Write letter
             c_size = self.font.getsize(c)
             c_image = Image.new('RGBA', c_size, (0, 0, 0, 0))
             c_draw = ImageDraw.Draw(c_image)
-            c_draw.text((0, 0), c, font=self.font, fill=(0, 0, 0, 255))
+            
+            c_draw.text((0, 0), c, font=self.font, fill=color)
 
             # Transform
             c_image = self._rndLetterTransform(c_image)
@@ -310,6 +339,20 @@ class Claptcha(object):
 
         # Paste onto image
         image.paste(l_image, (0, 0), l_image)
+
+
+    def _drawGlitter(self, image, color=None, width=3, number=30):
+        if color==None:
+            color = (random.randint(20, 200), random.randint(20, 200),random.randint(20, 100), 255)
+            
+        draw = ImageDraw.Draw(image)
+        w, h = image.size
+        while number:
+            x1 = random.randint(0, w)
+            y1 = random.randint(0, h)
+            draw.line(((x1, y1), (x1 - 1, y1 - 1)), fill=color, width=width)
+            number -= 1
+        return image
 
     def _whiteNoise(self, size):
         """Generate white noise and merge it with given Image object."""
